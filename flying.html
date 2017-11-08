@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang=en>
+<head>
+<title>Flying</title>
+<style type="text/css">
+<!--
+BODY { background: black; overflow: hidden }
+* { cursor: url(arrow.cur), url(arrow.png), default }
+#c { position:absolute;top:0;left:0 }
+#se { position:absolute;top:0;left:0; display: none; width:100%; height: 100% }
+#s { display: none; position: absolute }
+#b { position: absolute; top:10px; right: 10px }
+//-->
+</style>
+<!--[if IE]><script type="text/javascript" src="excanvas.js"></script><![endif]-->
+</head>
+<body onresize="onResize()" onLoad="onLoad()" ondragstart="return false">
+
+<canvas id=c></canvas><!-- Screensaver canvas -->
+<div id=se onmousemove="globalmousemove(event)" onmousedown="return false" onmouseup="return globalmouseclick(event)"></div><!-- Helper for window drag events -->
+<canvas id=s onmousedown="return winmousedown(setupwindow,s,event)" onmouseup="return winmouseup(setupwindow,s,event, true)" onmousemove="return winmousemove(setupwindow,s,event)" onmouseout="return winmouseup(setupwindow,s,event,false)"></canvas><!-- Setup window -->
+<canvas id=b onmousedown="return winmousedown(buttonwindow,bw,event)" onmouseup="return winmouseup(buttonwindow,bw,event, true)" onmousemove="return winmousemove(buttonwindow,bw,event)" onmouseout="return winmouseup(buttonwindow,bw,event,false)"></canvas><!-- Fixed buttons -->
+
+<!-- Windows Logo (TM Microsoft) -->
+<script type="text/javascript" src="winlogo.js"></script>
+<!-- Fonts and scroll arrows -->
+<img src="fonts.png" id=fonts style="position:absolute;top:-100px">
+
+<script type="text/javascript">
+<!--
+// Copyright 2011 nandhp <nandhp@gmail.com>
+// See http://jrgraphix.net/research/flash_starfield.php for starfield eqns
+// License GNU GPL2+
+
+// FIXME: sysmenu, # of windows as text
+
+// Configuration
+var nobjects = 20;
+var speed = 15;
+var realspeed = 0;
+var mode = 1;
+// Object list
+var objects = new Array();
+// Field numbers for the object list
+var SX = 0; var SY = 1; var SZ = 2; var COLOR = 3;
+
+// Canvas element
+var c = document.getElementById('c');
+var cx;
+
+// Setup window
+var s = document.getElementById('s');
+
+// Button window
+var bw = document.getElementById('b');
+
+function onResize() {
+  c.width = window.innerWidth||document.documentElement.clientWidth;
+  c.height = window.innerHeight||document.documentElement.clientHeight;
+}
+var colors = new Array('white', '#c3c7cb' /* light gray*/, '#aa0055' /* burgundy */, '#aa55aa' /* lavender */, '#55aaaa' /* teal blue */, '#00ff00' /* bright green */, '#aaaa55' /* tan */, '#00aa55' /* teal green */, '#ff0000' /* red */, '#0000aa' /* blue */, '#868a8e' /* some other gray */ );
+function newObject(i) {
+  var r = Math.random()*1000+50;
+  var theta = Math.random()*2*3.14159;
+  objects[i] = [r*Math.cos(theta), r*Math.sin(theta), Math.random()*300+10,
+                mode?colors[Math.floor(Math.random()*colors.length)]:'white'];
+}
+function resetState() {
+  objects = new Array();
+  while ( objects.length < nobjects ) newObject(objects.length);
+  realspeed = 0;
+}
+function onLoad() {
+  onResize();
+  cx = c.getContext('2d');
+  setMode(mode);
+  resetState();
+  draw();
+  drawWindow(bw, buttonwindow);
+}
+function draw() {
+  // Install new items in the objects array
+  onResize();
+  var screenw = Math.floor(c.width/2);
+  var screenh = Math.floor(c.height/2);
+  var scale = Math.sqrt(screenw*screenw+screenh*screenh);
+  if ( c.style.display != 'none' )
+  for ( var i = 0; i < objects.length; i++ ) {
+    cx.fillStyle = objects[i][COLOR];
+    var ratio = 25/objects[i][SZ];
+    var size = 120/objects[i][SZ]+1;
+    var screenx = objects[i][SX]*ratio+screenw;
+    var screeny = objects[i][SY]*ratio+screenh;
+    if ( mode ) winlogo(cx, screenx, screeny, Math.min((size-1)/15,75/188));
+    else {
+      size = Math.ceil(size);
+      cx.fillRect(screenx, screeny, size, size);
+    }
+    objects[i][SZ] -= realspeed;
+    if ( realspeed < speed ) realspeed += .02;
+    if(objects[i][SZ] <= 0) newObject(i);
+  }
+  setTimeout('draw()',90-speed);
+}
+function setMode(m) {
+  mode = m;
+  var myname = mode ? 'Flying Windows' : 'Starfield Simulation';
+  document.title = myname;
+  setupwindow[0][TEXT] = myname+' Setup';
+  setupwindow[3][TEXT] = 'Number of '+(mode?'Windows':'stars');//+': '+(setupwindow[2][TEXT]+10);
+  setupwindow[4][TEXT] = mode?'Density':'Starfield Density';
+  for ( var i = 0; i < objects.length; i++ ) {
+    objects[i][COLOR] = mode?colors[Math.floor(Math.random()*colors.length)]:'white';
+  }
+
+  changeFavicon(mode?'ssflywin.ico':'ssstars.ico');
+}
+
+// Work around a chrome bug
+/*
+if ( /Chrome/.test(navigator.userAgent) ) {
+  var chromeiframe = document.createElement('iframe');
+  chromeiframe.src = 'about:blank';
+  chromeiframe.style.display = 'none';
+  document.body.appendChild(chromeiframe);
+}*/
+// Set the favicon
+function changeFavicon(src) {
+  var link = document.createElement('link');
+  var oldLink = document.getElementById('dynamic-favicon');
+  link.id = 'dynamic-favicon';
+  link.rel = 'shortcut icon';
+  link.type = 'image/png';
+  link.href = src;
+  if ( oldLink ) oldLink.parentNode.removeChild(oldLink);
+  var head = document.head || document.getElementsByTagName('head')[0];
+  head.appendChild(link);
+  //if ( chromeiframe ) chromeiframe.src += '';
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// The following is excessively elaborate code for drawing Windows 3.1-style
+// windows on a CANVAS. It's actually rather general-purpose.
+//
+// Sadly, it's not WINAPI compatible.
+//
+
+var STYLE_ACTIVE = '#000080';
+var STYLE_BUTTON = '#c0c0c0';
+var STYLE_DARKSHADOW = '#808080';
+var STYLE_LIGHTSHADOW = 'white';
+var STYLE_BACKGROUND = 'white';
+var STYLE_FOREGROUND = 'black';
+var setupwindow = [
+  ['WINDOW', '[Screensaver] Setup', 0, 0, 364, 213, 1],
+  ['SCROLL', 50, 19, 63, 242, 20, 100],
+  ['SCROLL', 20, 19, 126/*130*/, 242, 20, 110],
+  ['STATIC', 'Number of [objects]: [number]', 20, 113/*117*/, -1, -1, 0],
+  ['STATIC', 'Density', 12, 100, 263, 53, 0],
+  ['BUTTON', 'OK', 282, 37, 70, 23, 0],
+  ['BUTTON', 'Cancel', 282, 66, 70, 23, 0],
+  //['BUTTON', 'Help', 282, 96, 70, 23, 0],
+  ['STATIC', 'Slow', 20, 50, -1, -1, 0],
+  ['STATIC', 'Fast', 237, 50, -1, -1, 0],
+  ['STATIC', 'Warp Speed', 12, 37, 263, 53, 0],
+  ['STATIC', '', 12, 154+8, 263, 37, 0],
+  ['STATIC', 'Implemented in HTML5 by', 20, 167, -1, -1, 0],
+  ['STATIC', 'nandhp <nandhp@gmail.com>', 20, 181, -1, -1, 0],
+  ['SYSMENU', '', 6, 23, 117, 39, 0],
+];
+var buttonwindow = [
+  ['WINDOW', '', 0, 0, 70*2, 23, 0],
+  ['BUTTON', 'Mode', 0, 0, 70, 23, 0],
+  ['BUTTON', 'Setup...', 70, 0, 70, 23, 0]
+]
+var CLASS = 0; var TEXT = 1; var WX = 2; var WY = 3; var WW = 4; var WH = 5;
+var FLAGS = 6;
+
+var fonts = {
+  'vgasys': { height: 16, ypos: 0, // System (VGA), Black
+    metrics: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 8, 14, 22, 30, 41, 50, 54, 58, 62, 68, 76,
+ 80, 84, 88, 92, 100, 108, 116, 124, 132, 140, 148, 156, 164, 172, 176, 180,
+ 188, 196, 204, 212, 226, 234, 244, 253, 263, 272, 280, 290, 300, 304, 311,
+ 320, 328, 340, 350, 360, 369, 379, 389, 398, 406, 416, 424, 438, 447, 457,
+ 466, 470, 474, 478, 483, 491, 496, 504, 512, 519, 527, 535, 539, 547, 555,
+ 559, 563, 570, 574, 586, 594, 602, 610, 618, 623, 631, 635, 643, 651, 661,
+ 669, 677, 685, 690, 694, 699, 704] },
+  'vgasysw': { ypos: 16, inherit: 'vgasys' }, // System (VGA), White
+  'sserife': { height: 13, ypos: 32, // MS Sans Serif 8, Black
+    metrics: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 6, 11, 18, 24, 32, 38, 40, 43, 46, 50, 56,
+59, 62, 65, 70, 76, 82, 88, 94, 100, 106, 112, 118, 124, 130, 133, 136, 142,
+148, 154, 160, 171, 178, 185, 192, 200, 207, 213, 221, 229, 232, 237, 244, 250,
+259, 267, 275, 282, 290, 298, 305, 312, 320, 327, 338, 345, 352, 359, 362, 367,
+370, 376, 382, 385, 391, 397, 403, 409, 415, 418, 424, 430, 432, 434, 440, 442,
+450, 456, 462, 468, 474, 477, 482, 485, 491, 497, 505, 510, 515, 520, 524, 526,
+530, 537] }
+};
+for ( var f in fonts ) {
+  while ( fonts[f]['inherit'] ) {
+    var ih = fonts[f]['inherit'];
+    fonts[f]['inherit'] = undefined;
+    for ( var g in fonts[ih] ) {
+      if ( !fonts[f][g] ) fonts[f][g] = fonts[ih][g];
+    }
+  }
+}
+
+function drawWindow(canvas, w) {
+  var wx = canvas.getContext('2d');
+  canvas.width = w[0][WW];
+  canvas.height = w[0][WH];
+  for ( i = 0; i < w.length; i++ ) {
+    drawWidget(wx, w[i]);
+  }
+}
+
+function drawWidget(wx, w) {
+  if ( w[CLASS] == 'WINDOW' ) {
+    // Thick border
+    wx.fillStyle = STYLE_ACTIVE;
+    wx.fillRect(w[WX], w[WY], w[WW], w[WH]);
+    // Background
+    wx.fillStyle = STYLE_BACKGROUND;
+    wx.fillRect(w[WX]+5, w[WY]+4, w[WW]-10, w[WH]-9);
+    // Thin border
+    wx.strokeStyle = STYLE_FOREGROUND;
+    wx.strokeRect(w[WX]+.5, w[WY]+.5, w[WW]-1, w[WH]-1);
+    if ( w[FLAGS] ) { // Draw Titlebar
+      // Titlebar background
+      wx.fillStyle = STYLE_ACTIVE;
+      wx.fillRect(w[WX]+6, w[WY]+5, w[WW]-12, 18);
+      // Titlebar underline
+      wx.strokeStyle = STYLE_FOREGROUND;
+      wx.beginPath();
+      wx.moveTo(w[WX]+6, w[WY]+23.5); wx.lineTo(w[WW]-6, w[WY]+23.5);
+      wx.stroke();
+      // System menu
+      wx.fillStyle = STYLE_BUTTON;
+      wx.fillRect(w[WX]+6, w[WY]+5, 18, 18);
+      wx.beginPath();
+      wx.moveTo(w[WX]+6+18+.5, w[WY]+5); wx.lineTo(w[WX]+6+18+.5, w[WY]+23.5);
+      wx.stroke();
+      // Icon
+      wx.strokeStyle = STYLE_DARKSHADOW;
+      wx.beginPath()
+      wx.moveTo(w[WX]+9, w[WY]+15.5);
+      wx.lineTo(w[WX]+21, w[WY]+15.5);
+      wx.moveTo(w[WX]+21.5, w[WY]+16);
+      wx.lineTo(w[WX]+21.5, w[WY]+13);
+      wx.stroke();
+      //wx.strokeRect(w[WX]+8+1, w[WY]+12.5+1, 12, 2);
+      wx.fillStyle = STYLE_BACKGROUND;
+      wx.fillRect(w[WX]+8.5, w[WY]+12.5, 12, 2);
+      wx.strokeStyle = STYLE_FOREGROUND;
+      wx.beginPath();
+      wx.strokeRect(w[WX]+8.5, w[WY]+12.5, 12, 2);
+      wx.stroke();
+      // Title
+      var textc = (w[WX]+6+18+.5+w[WX]+w[WW]-6)/2;
+      textc -= measureText(w[TEXT], "vgasysw", false)/2;
+      drawText(wx, w[TEXT], "vgasysw", textc, w[WY]+6, false);
+    }
+  }
+  else if ( w[CLASS] == 'SYSMENU' ) {
+    if ( w[FLAGS] ) {
+      wx.fillStyle = STYLE_BACKGROUND;
+      wx.strokeStyle = STYLE_FOREGROUND;
+      wx.fillRect(w[WX]+.5, w[WY]+.5, w[WW]-2, w[WH]-2);
+      wx.strokeRect(w[WX]+.5, w[WY]+.5, w[WW]-2, w[WH]-2);
+      // Menu shadow
+      wx.strokeStyle = STYLE_BUTTON;
+      wx.beginPath();
+      wx.moveTo(w[WX]+1, w[WY]+w[WH]-.5);
+      wx.lineTo(w[WX]+w[WW], w[WY]+w[WH]-.5);
+      wx.moveTo(w[WX]+w[WW]-.5, w[WY]+w[WH]);
+      wx.lineTo(w[WX]+w[WW]-.5, w[WY]+1);
+      wx.stroke();
+      // Menu text
+      drawText(wx, 'Move', "vgasys", w[WX]+16, w[WY]+1, false);
+      drawText(wx, 'Close  Alt+F4', "vgasys", w[WX]+16, w[WY]+19, false);
+    }
+  }
+  else if ( w[CLASS] == "BUTTON" ) {
+    wx.fillStyle = STYLE_BUTTON;
+    wx.fillRect(w[WX]+1, w[WY]+1, w[WW]-2, w[WH]-2);
+    // Border
+    wx.strokeStyle = STYLE_FOREGROUND;
+    wx.beginPath();
+    wx.moveTo(w[WX]+1, w[WY]+.5);
+    wx.lineTo(w[WX]+w[WW]-1, w[WY]+.5);
+    wx.moveTo(w[WX]+w[WW]-.5, w[WY]+1);
+    wx.lineTo(w[WX]+w[WW]-.5, w[WY]+w[WH]-1);
+    wx.moveTo(w[WX]+w[WW]-1, w[WY]+w[WH]-.5);
+    wx.lineTo(w[WX]+1, w[WY]+w[WH]-.5);
+    wx.moveTo(w[WX]+.5, w[WY]+w[WH]-1);
+    wx.lineTo(w[WX]+.5, w[WY]+1);
+    wx.stroke();
+    // Shadows
+    wx.strokeStyle = STYLE_DARKSHADOW;
+    wx.beginPath();
+    if ( dragging == w ) {
+      wx.moveTo(w[WX]+1.5, w[WY]+w[WH]-1);
+      wx.lineTo(w[WX]+1.5, w[WY]+1);
+      wx.moveTo(w[WX]+1, w[WY]+1.5);
+      wx.lineTo(w[WX]+w[WW]-1, w[WY]+1.5);
+      wx.stroke();
+    }
+    else {
+      // Outer dark shadow
+      wx.moveTo(w[WX]+1, w[WY]+w[WH]-1.5);
+      wx.lineTo(w[WX]+w[WW]-1, w[WY]+w[WH]-1.5);
+      wx.moveTo(w[WX]+w[WW]-1.5, w[WY]+w[WH]-1);
+      wx.lineTo(w[WX]+w[WW]-1.5, w[WY]+1);
+      // Inner dark shadow
+      wx.moveTo(w[WX]+2, w[WY]+w[WH]-2.5);
+      wx.lineTo(w[WX]+w[WW]-2, w[WY]+w[WH]-2.5);
+      wx.moveTo(w[WX]+w[WW]-2.5, w[WY]+w[WH]-2);
+      wx.lineTo(w[WX]+w[WW]-2.5, w[WY]+2);
+      wx.stroke();
+      wx.strokeStyle = STYLE_LIGHTSHADOW
+      wx.beginPath();
+      // Outer light shadow
+      wx.moveTo(w[WX]+1.5, w[WY]+w[WH]-1);
+      wx.lineTo(w[WX]+1.5, w[WY]+1);
+      wx.moveTo(w[WX]+1, w[WY]+1.5);
+      wx.lineTo(w[WX]+w[WW]-1, w[WY]+1.5);
+      // Inner light shadow
+      wx.moveTo(w[WX]+2.5, w[WY]+w[WH]-2);
+      wx.lineTo(w[WX]+2.5, w[WY]+2);
+      wx.moveTo(w[WX]+2, w[WY]+2.5);
+      wx.lineTo(w[WX]+w[WW]-2, w[WY]+2.5);
+      wx.stroke();
+    }
+    // Text
+    var toff = (dragging == w) ? 1 : 0;
+    var textc = (w[WX]+w[WX]+w[WW])/2;
+    textc -= measureText(w[TEXT], "sserife", true)/2;
+    drawText(wx, w[TEXT], "sserife", textc+toff, w[WY]+5+toff, true);
+  }
+  else if ( w[CLASS] == "STATIC" ) {
+    if ( w[WW] > 0 || w[WH] > 0 ) {
+      wx.strokeStyle = STYLE_FOREGROUND;
+      wx.strokeRect(w[WX]+.5, w[WY]+.5, w[WW]-1, w[WH]-1);
+      var textw = measureText(w[TEXT], "sserife", true);
+      if ( textw ) {
+        wx.strokeStyle = STYLE_BACKGROUND;
+        wx.beginPath();
+        wx.moveTo(w[WX]+7, w[WY]+.5);
+        wx.lineTo(w[WX]+textw+11, w[WY]+.5);
+        wx.stroke();
+        drawText(wx, w[TEXT], "sserife", w[WX]+10, w[WY]-3, true);
+      }
+    }
+    else drawText(wx, w[TEXT], "sserife", w[WX], w[WY], true);
+  }
+  else if ( w[CLASS] == "SCROLL" ) {
+    // Trough
+    wx.fillStyle = STYLE_BUTTON;
+    wx.fillRect(w[WX], w[WY], w[WW]-1, w[WH]-1);
+    // Border
+    wx.beginPath();
+    wx.strokeStyle = STYLE_FOREGROUND;
+    wx.moveTo(w[WX], w[WY]+.5);
+    wx.lineTo(w[WX]+w[WW]-1, w[WY]+.5);
+    wx.moveTo(w[WX]+w[WW]-.5, w[WY]);
+    wx.lineTo(w[WX]+w[WW]-.5, w[WY]+w[WH]-1);
+    wx.moveTo(w[WX]+w[WW], w[WY]+w[WH]-.5);
+    wx.lineTo(w[WX], w[WY]+w[WH]-.5);
+    wx.moveTo(w[WX]+.5, w[WY]+w[WH]-1);
+    wx.lineTo(w[WX]+.5, w[WY]);
+    wx.stroke();
+    // Boxes
+    var boxpos = new Array(0, scrollboxpos(w), w[WW]-17);
+    for ( var i = 0; i < boxpos.length; i++ ) {
+      wx.beginPath();
+      wx.strokeStyle = STYLE_FOREGROUND;
+      wx.moveTo(w[WX]+boxpos[i]+.5,w[WY]);
+      wx.lineTo(w[WX]+boxpos[i]+.5,w[WY]+w[WH]-1);
+      wx.moveTo(w[WX]+boxpos[i]+16.5,w[WY]);
+      wx.lineTo(w[WX]+boxpos[i]+16.5,w[WY]+w[WH]-1);
+      wx.stroke();
+      if ( i != 1 && dragging == w && draghint == i-1 ) {
+        wx.beginPath();
+        wx.strokeStyle = STYLE_DARKSHADOW;
+        wx.moveTo(w[WX]+boxpos[i]+16,w[WY]+1.5);
+        wx.lineTo(w[WX]+boxpos[i]+1,w[WY]+1.5);
+        wx.moveTo(w[WX]+boxpos[i]+1.5,w[WY]+1.5);
+        wx.lineTo(w[WX]+boxpos[i]+1.5,w[WY]+w[WH]-1);
+        wx.stroke();
+      }
+      else {
+        // Light shadow
+        wx.beginPath();
+        wx.strokeStyle = STYLE_LIGHTSHADOW;
+        wx.moveTo(w[WX]+boxpos[i]+15,w[WY]+1.5);
+        wx.lineTo(w[WX]+boxpos[i]+1,w[WY]+1.5);
+        wx.moveTo(w[WX]+boxpos[i]+1.5,w[WY]+1.5);
+        wx.lineTo(w[WX]+boxpos[i]+1.5,w[WY]+w[WH]-2);
+        wx.stroke();
+        // Dark shadow
+        wx.beginPath();
+        wx.strokeStyle = STYLE_DARKSHADOW;
+        wx.moveTo(w[WX]+boxpos[i]+1,w[WY]+w[WH]-1.5);
+        wx.lineTo(w[WX]+boxpos[i]+15,w[WY]+w[WH]-1.5);
+        wx.moveTo(w[WX]+boxpos[i]+15.5,w[WY]+w[WH]-1);
+        wx.lineTo(w[WX]+boxpos[i]+15.5,w[WY]+1);
+        //  Inner dark shadow
+        wx.moveTo(w[WX]+boxpos[i]+2,w[WY]+w[WH]-2.5);
+        wx.lineTo(w[WX]+boxpos[i]+14,w[WY]+w[WH]-2.5);
+        wx.moveTo(w[WX]+boxpos[i]+14.5,w[WY]+w[WH]-2);
+        wx.lineTo(w[WX]+boxpos[i]+14.5,w[WY]+2);
+        // Endbutton extra dark shadows
+        if ( i != 1 ) {
+          wx.moveTo(w[WX]+boxpos[i]+2,w[WY]+w[WH]-3.5);
+          wx.lineTo(w[WX]+boxpos[i]+14,w[WY]+w[WH]-3.5);
+        }
+        wx.stroke();
+      }
+    }
+    // Arrows & Trough highlight
+    var offa = 0; var offb = 0;
+    if ( dragging == w ) {
+      if ( draghint == -1 ) offa = 1;
+      else if ( draghint == 1 ) offb = 1;
+      else if ( draghint != 0 ) {
+        wx.fillStyle = STYLE_DARKSHADOW;
+        if ( draghint < 0 )
+          wx.fillRect(w[WX]+17, w[WY]+1, boxpos[1]-17, w[WH]-2);
+        else
+          wx.fillRect(boxpos[1]+36, w[WY]+1, w[WW]-boxpos[1]-34, w[WH]-2);
+      }
+    }
+    var img = document.getElementById('fonts');
+    wx.drawImage(img, 697+0, 37, 7, 8, w[WX]+5+offa, w[WY]+6+offa, 7, 8);
+    wx.drawImage(img, 697+4, 37, 7, 8, w[WX]+w[WW]-12+offb, w[WY]+6+offb, 7, 8);
+  }
+  else {
+    wx.fillStyle = STYLE_FOREGROUND;
+    wx.fillRect(w[WX], w[WY], w[WW]-1, w[WH]-1);
+  }
+}
+
+function measureText(str, font, bold) {
+  var width = 0;
+  for ( var i = 0; i < str.length; i++ ) {
+    var j = str.charCodeAt(i);
+    width += fonts[font]['metrics'][j+1]-fonts[font]['metrics'][j];
+    if ( bold ) width++;
+  }
+  return width;
+}
+function drawText(wx, str,font, x, y, bold) {
+  img = document.getElementById('fonts');
+  for ( var i = 0; i < str.length; i++ ) {
+    var j = str.charCodeAt(i);
+    var sx = fonts[font]['metrics'][j];
+    var sw = fonts[font]['metrics'][j+1]-sx;
+    var sy = fonts[font]['ypos'];
+    var h = fonts[font]['height'];
+    wx.drawImage(img, sx, sy, sw, h, Math.floor(x), Math.floor(y), sw, h);
+    if ( bold ) {
+      wx.drawImage(img, sx, sy, sw, h, Math.floor(x)-1, Math.floor(y), sw, h);
+      x++;
+    }
+    x += sw;
+  }
+}
+
+function scrollboxpos(w) {
+  return Math.ceil(w[TEXT]/w[FLAGS]*(w[WW]-17*3))+17;
+}
+
+function getWidgetCoords(w,c, e) {
+  var posx = 0;
+  var posy = 0;
+  if (e.pageX || e.pageY) 	{
+    posx = e.pageX;
+    posy = e.pageY;
+  }
+  else if (e.clientX || e.clientY) 	{
+    posx = e.clientX + document.body.scrollLeft
+	    + document.documentElement.scrollLeft;
+    posy = e.clientY + document.body.scrollTop
+	    + document.documentElement.scrollTop;
+  }
+  // posx and posy contain the mouse position relative to the document
+  // Do something with this information
+  winx = posx - parseInt(c.offsetLeft) - w[WX];
+  winy = posy - parseInt(c.offsetTop) - w[WY];
+  return [winx, winy, posx, posy];
+}
+function findWidgetForEvent(w,c,e) {
+  for ( i = w.length-1; i >= 0; i-- ) {
+    if ( w[i][CLASS] == 'STATIC' ) continue;
+    if ( w[i][CLASS] == 'SYSMENU' && !w[i][FLAGS] ) continue;
+    xy = getWidgetCoords(w[i],c, e);
+    if ( xy[0] >= 0 && xy[0] <= w[i][WW] && xy[1] >= 0 && xy[1] <= w[i][WH] )
+      return [xy[0], xy[1], i];
+  }
+  return 0;
+}
+var dragging = undefined;
+var draghint = -1;
+var draghinu = -1;
+var dragwx = undefined;
+var dragtimer = undefined;
+function winmousedown(W,c,e) {
+  if (!e) var e = window.event;
+  var wx = c.getContext('2d');
+  e = findWidgetForEvent(W,c,e);
+  if ( !e ) return true;
+  var w = W[e[2]];
+  var wasdragging = dragging;
+  if ( dragging && dragging != w )winmouseup(W,c, e, true);
+  if ( w[CLASS] == 'BUTTON' ) {
+    dragging = w;
+  }
+  else if ( w[CLASS] == 'SCROLL' ) {
+    var sbp = scrollboxpos(w);
+    dragwx = wx;
+    dragging = w;
+    if ( e[0] < 17 ) draghint = -1;
+    else if ( e[0] < sbp ) draghint = -Math.floor(w[FLAGS]/10);
+    else if ( e[0] < sbp+17 ) draghint = 0;
+    else if ( e[0] < w[WW]-17 ) draghint = Math.floor(w[FLAGS]/10);
+    else draghint = 1;
+    if ( draghint ) sbdrag(true);
+  }
+  else if ( w[CLASS] == 'WINDOW' ) {
+    if ( e[0] > 6 && e[0] < w[WW]-6 && e[1] > 6 && e[1] < 24 ) {
+      if ( e[0] >= 24 ) {
+        dragging = w;
+        draghint = e[0];
+        draghinu = e[1];
+      }
+      else {
+        var sysmenu = undefined;
+        for ( i = 0; i < W.length; i++ ) {
+          if ( W[i][CLASS] != 'SYSMENU' ) continue;
+          sysmenu = W[i];
+          break;
+        }
+        if ( sysmenu ) {
+          if ( wasdragging && wasdragging == sysmenu ) {
+            // Click on system menu box again. Don't reshow.
+            // But did we double-click?
+            if ( draghinu && new Date().getTime()-draghinu < 1000 ) {
+              if ( W == setupwindow ) closeSetupWindow();
+            }
+          }
+          else {
+            sysmenu[FLAGS] = 1;
+            dragging = sysmenu;
+            draghint = 0;
+            draghinu = new Date().getTime();
+            drawWidget(wx, sysmenu);
+          }
+        }
+      }
+    }
+    return false;
+  }
+  else if ( w[CLASS] == 'SYSMENU' ) {
+    dragging = w;
+  }
+  drawWidget(wx, w);
+  return false;
+}
+function sbdrag(first) {
+  var w = dragging;
+  if ( !w || w[CLASS] != 'SCROLL' ) return;
+  w[TEXT] += draghint;
+  if ( w[TEXT] < 0 ) w[TEXT] = 0;
+  if ( w[TEXT] > w[FLAGS] ) w[TEXT] = w[FLAGS];
+  /*if ( w == W[2] ) {
+    W[3][TEXT] = 'Number of '+(mode?'Windows':'stars')+': '+(W[2][TEXT]+10);
+    drawWidget(wx, W[3]);
+  }*/
+  if ( !first ) drawWidget(dragwx, w);
+  dragtimer = setTimeout('sbdrag(false)', first?250:50);
+}
+function winmouseup(W,c, e, b) {
+  // ONMOUSEOUT is trigger-happy on IE6...
+  if (!dragging) return true;
+  if ( !b && dragging == W[0] && W[0][CLASS] == 'WINDOW' ) return true;
+  if (!e) var e = window.event;
+  var wx = c.getContext('2d');
+  var E = findWidgetForEvent(W,c,e);
+  var w = dragging;
+  e = getWidgetCoords(w,c,e);
+  dragging = undefined;
+  if ( dragtimer ) { clearTimeout(dragtimer); dragtimer = undefined; }
+  if ( w[CLASS] == 'BUTTON' && b && w == W[E[2]] ) {
+    if ( w[TEXT] == 'Setup...' ) {
+      setupwindow[1][TEXT] = 10*(speed-10);
+      setupwindow[2][TEXT] = nobjects-10;
+      drawWindow(s, setupwindow);
+      s.style.left = ((window.innerWidth-s.width)/2)+'px';
+      s.style.top = ((window.innerHeight-s.height)/2)+'px';
+      document.getElementById('se').style.display='block';
+      s.style.display = 'block';
+      bw.style.display = 'none';
+      document.getElementById('c').style.display = 'none';
+      document.body.style.background = STYLE_BUTTON;
+    }
+    else if ( w[TEXT] == 'Mode' ) {
+      setMode(mode ? 0 : 1);
+    }
+    else {
+      if ( w[TEXT] == 'OK' ) {
+        // Save settings
+        speed = setupwindow[1][TEXT]/10+10;
+        nobjects = setupwindow[2][TEXT]+10;
+      }
+      closeSetupWindow();
+    }
+  }
+  else if ( w[CLASS] == 'SYSMENU' ) {
+    if ( e[0] > 0 && e[0] < w[WW] && e[1] > 0 && e[1] < w[WH] ) {
+      if ( e[1] < w[WH]/2 ) {
+        // Start moving
+        dragging = W[0];
+        draghint = Math.floor(W[0][WW]/2);
+        draghinu = Math.floor(W[0][WH]/2);
+      }
+      else {
+        // Click Cancel button
+        closeSetupWindow();
+      }
+    }
+    if ( draghint && b ) {
+      w[FLAGS] = 0;
+      drawWindow(c,W);
+    } else { draghint = 1; dragging = w; }
+    return false;
+  }
+  else if ( w[CLASS] == 'WINDOW' ) return false;
+  drawWidget(wx, w);
+  return false;
+}
+function closeSetupWindow() {
+  resetState();
+  document.body.style.background = 'black';
+  document.getElementById('c').style.display = 'block';
+  document.getElementById('se').style.display='none';
+  s.style.display = 'none';
+  bw.style.display = 'block';
+}
+function winmousemove(W,c,e) {
+  if (!dragging) return;
+  if (!e) var e = window.event;
+  var wx = c.getContext('2d');
+  var w = dragging;
+  e = getWidgetCoords(w,c,e);
+  if ( w[CLASS] == 'BUTTON' ) return false;
+  else if ( w[CLASS] == 'WINDOW' ) {
+    c.style.left = (e[2]-draghint)+"px"; c.style.top = (e[3]-draghinu)+"px";
+    return false;
+  }
+  else if ( w[CLASS] == 'SCROLL' && !draghint ) {
+    var pos = (e[0]-17.0)/(w[WW]-17*2);
+    if ( pos < 0 ) pos = 0;
+    if ( pos > 1 ) pos = 1;
+    w[TEXT] = Math.floor(pos*w[FLAGS]);
+    /*if ( w == W[2] ) {
+      W[3][TEXT] = 'Number of '+(mode?'Windows':'stars')+': '+(W[2][TEXT]+10);
+      drawWidget(wx, W[3]);
+    }*/
+  }
+  drawWidget(wx, w);
+  return false;
+}
+
+function globalmousemove(e) {
+  if ( dragging && dragging == setupwindow[0] ) {
+    winmousemove(setupwindow,s,e);
+    return false;
+  }
+  else return true;
+}
+function globalmouseclick(e) {
+  if ( dragging && dragging[CLASS] == 'SYSMENU' )
+    winmouseup(setupwindow,s,e,1);
+  return false;
+}
+//-->
+</script>
+</body>
+</html>

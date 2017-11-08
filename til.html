@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang=en>
+<head>
+<meta charset="utf-8">
+<title>Today I Learned</title>
+<style type="text/css">
+<!--
+BODY { background: #57a8a8; overflow: hidden; margin: 0; padding: 0 }
+* { cursor: url(arrow.cur), url(arrow.png), default }
+#c { position:absolute;top:0;left:0 }
+#se { position:absolute;top:0;left:0; display: none; width:100%; height: 100% }
+#s { display: block; position: absolute }
+#b { position: absolute; top:10px; right: 10px }
+#desktop { display: none; width:71px;height:287px;position:absolute;top:0;left:0;background:url(til.png) no-repeat }
+#taskbar { display: none; width:100%;height:28px;position:absolute;bottom:0;left:0;background:url(til.png) repeat-x 0px -423px }
+#start { display: none; width:221px;height:28px;position:absolute;bottom:0;left:0;background:url(til.png) no-repeat left bottom }
+#clock { display: none; width:221px;height:28px;position:absolute;bottom:0;right:0;background:url(til.png) no-repeat right bottom }
+//-->
+</style>
+<!--[if IE]><script type="text/javascript" src="excanvas.js"></script><![endif]-->
+</head>
+<body scroll=no onresize="onResize()" onLoad="onLoad()" ondragstart="return false">
+<div id=desktop></div>
+
+<canvas id=c></canvas><!-- Screensaver canvas -->
+<div id=se onmousemove="globalmousemove(event)" onmousedown="return false" onmouseup="return globalmouseclick(event)"></div><!-- Helper for window drag events -->
+<canvas id=s onmousedown="return winmousedown(setupwindow,s,event)" onmouseup="return winmouseup(setupwindow,s,event, true)" onmousemove="return winmousemove(setupwindow,s,event)" onmouseout="return winmouseup(setupwindow,s,event,false)"></canvas><!-- Setup window -->
+
+<div id=taskbar onmousemove="globalmousemove(event)" onmousedown="return false" onmouseup="return globalmouseclick(event)"></div>
+<div id=clock onmousemove="globalmousemove(event)" onmousedown="return false" onmouseup="return globalmouseclick(event)"></div>
+<div id=start onmousemove="globalmousemove(event)" onmousedown="return false" onmouseup="return globalmouseclick(event)"></div>
+
+<!-- Fonts and scroll arrows -->
+<img src="fonts.png" id=fonts style="position:absolute;top:-1000px">
+<img src="til.png" id=sprite style="position:absolute;top:-1000px">
+
+<script type="text/javascript">
+<!--
+// Copyright 2011 nandhp <nandhp@gmail.com>
+// See http://jrgraphix.net/research/flash_starfield.php for starfield eqns
+// License GNU GPL2+
+
+// FIXME: sysmenu, # of windows as text
+
+// Setup window
+var s = document.getElementById('s');
+
+var tipNum = -1;
+
+function unEntity(str){
+  var temp=document.createElement("pre");
+  temp.innerHTML=str;
+  return temp.firstChild.nodeValue;
+}
+function oldUnEntity(s) {
+  return s.replace(/&([#0-9a-zA-Z]+);/g, function (h,e) {
+    if ( e == 'nbsp' ) return ' ';
+    else if ( e == 'lt' ) return '<';
+    else if ( e == 'gt' ) return '>';
+    else if ( e == 'amp' ) return '&';
+    else if ( e == 'apos' ) return '\'';
+    else return e;
+  });
+}
+
+function bumpTip() {
+  tipNum = (tipNum+1)%items.length;
+  var item = items[tipNum];
+  var str = item[0];
+  str = str.replace(/(.{0,50})(\s+|$)/g,function(x,m) { return m+"\n" }).split("\n");
+  for ( i=0; i < 6; i++ ) {
+    setupwindow[i+2][TEXT] = i<str.length ? str[i] : '';
+  }
+  var score = 0;
+  var ncomments = 0;
+  if ( item.length > 1 ) {
+    score = item[2];
+    ncomments = item[3];
+  }
+  setupwindow[9][TEXT] = 'Score: '+score;
+  if ( ncomments == 0 ) setupwindow[10][TEXT] = 'No Comments';
+  else if ( ncomments == 1 ) setupwindow[10][TEXT] = '1 Comment';
+  else setupwindow[10][TEXT] = ncomments+' Comments';
+}
+
+function onResize() { }
+function onLoad() {
+  document.getElementById('desktop').style.display = 'block';
+  document.getElementById('taskbar').style.display = 'block';
+  document.getElementById('start').style.display = 'block';
+  //document.getElementById('clock').style.display = 'block';
+  bumpTip();
+  onResize();
+  drawWindow(s, setupwindow);
+  var iw = window.innerWidth||document.documentElement.clientWidth;
+  var ih = window.innerHeight||document.documentElement.clientHeight;
+  s.style.left = ((iw-s.width)/2)+'px';
+  s.style.top = ((ih-s.height)/2)+'px';
+  document.getElementById('se').style.display='block';
+  s.style.display = 'block';
+  //bw.style.display = 'none';
+  document.getElementById('c').style.display = 'none';
+  //document.body.style.background = STYLE_BUTTON;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// The following is excessively elaborate code for drawing Windows 3.1-style
+// windows on a CANVAS. It's actually rather general-purpose.
+//
+// Sadly, it's not WINAPI compatible.
+//
+// 30 August 2011: Badly repurposed for Windows 95-style
+//
+
+var STYLE_ACTIVE = '#000080';
+var STYLE_BUTTON = '#c0c7c8';
+var STYLE_DARKSHADOW = '#87888f';
+var STYLE_LIGHTSHADOW = 'white';
+var STYLE_BACKGROUND = 'white';
+var STYLE_FOREGROUND = 'black';
+var setupwindow = [
+  ['WINDOW', 'Welcome', 0, 0, 492, 279, 1],
+  ['STATIC', 'Today I Learned...', 79, 98, -1, -1, 1],
+  ['STATIC', 'To open a program, you just click the Start', 79, 131+13*(-1), -1, -1, 0],
+  ['STATIC', 'button, and then click the program\'s icon.', 79, 131+13*0, -1, -1, 0],
+  ['STATIC', 'Third line.', 79, 131+13*1, -1, -1, 0],
+  ['STATIC', 'Fourth line.', 79, 131+13*2, -1, -1, 0],
+  ['STATIC', 'Fifth line.', 79, 131+13*3, -1, -1, 0],
+  ['STATIC', 'Sixth line.', 79, 131+13*4, -1, -1, 0],
+  ['BUTTON', 'Read More', 360, 69+29*0, 114, 23, 0],
+  ['BUTTON', 'Score: 7', 360, 69+29*1, 114, 23, 0],
+  ['BUTTON', '7 Comments', 360, 70+29*2, 114, 23, 0],
+  //['BUTTON', 'Prev TIL', 360, 70+29*3, 114, 23, 0],
+  ['BUTTON', 'Next TIL', 360, 70+29*4, 114, 23, 0],
+  ['BUTTON', 'Close', 360, 237, 114, 23, 0],
+  ['CHECK', '', 18, 241, 269, 14, 1]
+];
+
+var CLASS = 0; var TEXT = 1; var WX = 2; var WY = 3; var WW = 4; var WH = 5;
+var FLAGS = 6;
+
+var fonts = {
+  'vgasys': { height: 16, ypos: 0, // System (VGA), Black
+    metrics: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 8, 14, 22, 30, 41, 50, 54, 58, 62, 68, 76,
+ 80, 84, 88, 92, 100, 108, 116, 124, 132, 140, 148, 156, 164, 172, 176, 180,
+ 188, 196, 204, 212, 226, 234, 244, 253, 263, 272, 280, 290, 300, 304, 311,
+ 320, 328, 340, 350, 360, 369, 379, 389, 398, 406, 416, 424, 438, 447, 457,
+ 466, 470, 474, 478, 483, 491, 496, 504, 512, 519, 527, 535, 539, 547, 555,
+ 559, 563, 570, 574, 586, 594, 602, 610, 618, 623, 631, 635, 643, 651, 661,
+ 669, 677, 685, 690, 694, 699, 704] },
+  'vgasysw': { ypos: 16, inherit: 'vgasys' }, // System (VGA), White
+  'sserife': { height: 13, ypos: 32, // MS Sans Serif 8, Black
+    metrics: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 6, 11, 18, 24, 32, 38, 40, 43, 46, 50, 56,
+59, 62, 65, 70, 76, 82, 88, 94, 100, 106, 112, 118, 124, 130, 133, 136, 142,
+148, 154, 160, 171, 178, 185, 192, 200, 207, 213, 221, 229, 232, 237, 244, 250,
+259, 267, 275, 282, 290, 298, 305, 312, 320, 327, 338, 345, 352, 359, 362, 367,
+370, 376, 382, 385, 391, 397, 403, 409, 415, 418, 424, 430, 432, 434, 440, 442,
+450, 456, 462, 468, 474, 477, 482, 485, 491, 497, 505, 510, 515, 520, 524, 526,
+530, 537] }
+};
+for ( var f in fonts ) {
+  while ( fonts[f]['inherit'] ) {
+    var ih = fonts[f]['inherit'];
+    fonts[f]['inherit'] = undefined;
+    for ( var g in fonts[ih] ) {
+      if ( !fonts[f][g] ) fonts[f][g] = fonts[ih][g];
+    }
+  }
+}
+
+function drawWindow(canvas, w) {
+  var wx = canvas.getContext('2d');
+  canvas.width = w[0][WW];
+  canvas.height = w[0][WH];
+  for ( i = 0; i < w.length; i++ ) {
+    drawWidget(wx, w[i]);
+  }
+}
+
+function drawWidget(wx, w) {
+  if ( w[CLASS] == 'WINDOW' ) {
+    img = document.getElementById('sprite');
+    wx.drawImage(img, 72, 86, w[WW], w[WH], w[WX], w[WY], w[WW], w[WH])
+  }
+  else if ( w[CLASS] == "BUTTON" ) {
+    wx.fillStyle = STYLE_BUTTON;
+    wx.fillRect(w[WX]+1, w[WY]+1, w[WW]-2, w[WH]-2);
+    // Border
+    wx.strokeStyle = STYLE_FOREGROUND;
+    wx.beginPath();
+    wx.moveTo(w[WX]+w[WW]-.5, w[WY]+1);
+    wx.lineTo(w[WX]+w[WW]-.5, w[WY]+w[WH]);
+    wx.moveTo(w[WX]+w[WW], w[WY]+w[WH]-.5);
+    wx.lineTo(w[WX]+1, w[WY]+w[WH]-.5);
+    wx.stroke();
+    // Shadows
+    wx.strokeStyle = STYLE_DARKSHADOW;
+    wx.beginPath();
+    if ( dragging == w ) {
+      wx.moveTo(w[WX]+1, w[WY]+w[WH]-1.5);
+      wx.lineTo(w[WX]+w[WW]-1, w[WY]+w[WH]-1.5);
+      wx.moveTo(w[WX]+w[WW]-1.5, w[WY]+w[WH]-1);
+      wx.lineTo(w[WX]+w[WW]-1.5, w[WY]+1);
+      wx.moveTo(w[WX]+1.5, w[WY]+w[WH]-1);
+      wx.lineTo(w[WX]+1.5, w[WY]);
+      wx.moveTo(w[WX], w[WY]+1.5);
+      wx.lineTo(w[WX]+w[WW]-1, w[WY]+1.5);
+      wx.stroke();
+      // Rest of the border
+      wx.strokeStyle = STYLE_FOREGROUND;
+      wx.beginPath();
+      wx.moveTo(w[WX], w[WY]+.5);
+      wx.lineTo(w[WX]+w[WW], w[WY]+.5);
+      wx.moveTo(w[WX]+.5, w[WY]+w[WH]);
+      wx.lineTo(w[WX]+.5, w[WY]);
+      wx.stroke()
+    }
+    else {
+      // Outer dark shadow
+      wx.moveTo(w[WX]+1, w[WY]+w[WH]-1.5);
+      wx.lineTo(w[WX]+w[WW]-1, w[WY]+w[WH]-1.5);
+      wx.moveTo(w[WX]+w[WW]-1.5, w[WY]+w[WH]-1);
+      wx.lineTo(w[WX]+w[WW]-1.5, w[WY]+1);
+      wx.stroke();
+      wx.strokeStyle = STYLE_LIGHTSHADOW
+      wx.beginPath();
+      // Outer light shadow
+      wx.moveTo(w[WX]+.5, w[WY]+w[WH]-1);
+      wx.lineTo(w[WX]+.5, w[WY]);
+      wx.moveTo(w[WX], w[WY]+.5);
+      wx.lineTo(w[WX]+w[WW]-1, w[WY]+.5);
+      wx.stroke();
+    }
+    // Text
+    var toff = (dragging == w) ? 1 : 0;
+    var textc = (w[WX]+w[WX]+w[WW])/2;
+    textc -= measureText(w[TEXT], "sserife", false)/2;
+    drawText(wx, w[TEXT], "sserife", textc+toff, w[WY]+5-1+toff, false);
+  }
+  else if ( w[CLASS] == "STATIC" ) {
+    if ( w[WW] > 0 || w[WH] > 0 ) {
+      wx.strokeStyle = STYLE_FOREGROUND;
+      wx.strokeRect(w[WX]+.5, w[WY]+.5, w[WW]-1, w[WH]-1);
+      var textw = measureText(w[TEXT], "sserife", true);
+      if ( textw ) {
+        wx.strokeStyle = STYLE_BACKGROUND;
+        wx.beginPath();
+        wx.moveTo(w[WX]+7, w[WY]+.5);
+        wx.lineTo(w[WX]+textw+11, w[WY]+.5);
+        wx.stroke();
+        drawText(wx, w[TEXT], "sserife", w[WX]+10, w[WY]-3, true);
+      }
+    }
+    else drawText(wx, w[TEXT], "sserife", w[WX], w[WY], w[FLAGS]?true:false);
+  }
+  else if ( w[CLASS] == "CHECK" ) {
+    wx.fillStyle = STYLE_BACKGROUND;
+    if ( w[FLAGS] ) {
+      img = document.getElementById('sprite');
+      wx.drawImage(img, 93, 330, 7,7, w[WX]+3, w[WY]+3, 7, 7)
+    }
+    else wx.fillRect(w[WX]+3, w[WY]+3, 7, 7);
+  }
+  else {
+    wx.fillStyle = STYLE_FOREGROUND;
+    wx.fillRect(w[WX], w[WY], w[WW]-1, w[WH]-1);
+  }
+}
+
+
+function measureText(str, font, bold) {
+  var width = 0;
+  for ( var i = 0; i < str.length; i++ ) {
+    var j = str.charCodeAt(i);
+    width += fonts[font]['metrics'][j+1]-fonts[font]['metrics'][j];
+    if ( bold ) width++;
+  }
+  return width;
+}
+function drawText(wx, str,font, x, y, bold) {
+  img = document.getElementById('fonts');
+  for ( var i = 0; i < str.length; i++ ) {
+    var j = str.charCodeAt(i);
+    if ( j > 127 ) j = 127;
+    var sx = fonts[font]['metrics'][j];
+    var sw = j == 127 ? 4 : (fonts[font]['metrics'][j+1]-sx);
+    var sy = fonts[font]['ypos'];
+    var h = fonts[font]['height'];
+    wx.drawImage(img, sx, sy, sw, h, Math.floor(x), Math.floor(y), sw, h);
+    if ( bold ) {
+      wx.drawImage(img, sx, sy, sw, h, Math.floor(x)-1, Math.floor(y), sw, h);
+      x++;
+    }
+    x += sw;
+  }
+}
+
+function getWidgetCoords(w,c, e) {
+  var posx = 0;
+  var posy = 0;
+  if (e.pageX || e.pageY) 	{
+    posx = e.pageX;
+    posy = e.pageY;
+  }
+  else if (e.clientX || e.clientY) 	{
+    posx = e.clientX + document.body.scrollLeft
+	    + document.documentElement.scrollLeft;
+    posy = e.clientY + document.body.scrollTop
+	    + document.documentElement.scrollTop;
+  }
+  // posx and posy contain the mouse position relative to the document
+  // Do something with this information
+  winx = posx - parseInt(c.offsetLeft) - w[WX];
+  winy = posy - parseInt(c.offsetTop) - w[WY];
+  return [winx, winy, posx, posy];
+}
+function findWidgetForEvent(w,c,e) {
+  for ( i = w.length-1; i >= 0; i-- ) {
+    if ( w[i][CLASS] == 'STATIC' ) continue;
+    if ( w[i][CLASS] == 'SYSMENU' && !w[i][FLAGS] ) continue;
+    xy = getWidgetCoords(w[i],c, e);
+    if ( xy[0] >= 0 && xy[0] <= w[i][WW] && xy[1] >= 0 && xy[1] <= w[i][WH] )
+      return [xy[0], xy[1], i];
+  }
+  return 0;
+}
+var dragging = undefined;
+var draghint = -1;
+var draghinu = -1;
+var dragwx = undefined;
+var dragtimer = undefined;
+function winmousedown(W,c,e) {
+  if (!e) var e = window.event;
+  var wx = c.getContext('2d');
+  e = findWidgetForEvent(W,c,e);
+  if ( !e ) return true;
+  var w = W[e[2]];
+  var wasdragging = dragging;
+  if ( dragging && dragging != w )winmouseup(W,c, e, true);
+  if ( w[CLASS] == 'BUTTON' || w[CLASS] == 'CHECK' ) {
+    dragging = w;
+  }
+  else if ( w[CLASS] == 'SCROLL' ) {
+    var sbp = scrollboxpos(w);
+    dragwx = wx;
+    dragging = w;
+    if ( e[0] < 17 ) draghint = -1;
+    else if ( e[0] < sbp ) draghint = -Math.floor(w[FLAGS]/10);
+    else if ( e[0] < sbp+17 ) draghint = 0;
+    else if ( e[0] < w[WW]-17 ) draghint = Math.floor(w[FLAGS]/10);
+    else draghint = 1;
+    if ( draghint ) sbdrag(true);
+  }
+  else if ( w[CLASS] == 'WINDOW' ) {
+    //if ( e[0] > 6 && e[0] < w[WW]-6 && e[1] > 6 && e[1] < 24 ) {
+    if ( e[0] > 3 && e[0] < w[WW]-3 && e[1] > 3 && e[1] < 21 ) {
+      if ( true || e[0] >= 24 ) {
+        dragging = w;
+        draghint = e[0];
+        draghinu = e[1];
+      }
+      else {
+        var sysmenu = undefined;
+        for ( i = 0; i < W.length; i++ ) {
+          if ( W[i][CLASS] != 'SYSMENU' ) continue;
+          sysmenu = W[i];
+          break;
+        }
+        if ( sysmenu ) {
+          if ( wasdragging && wasdragging == sysmenu ) {
+            // Click on system menu box again. Don't reshow.
+            // But did we double-click?
+            if ( draghinu && new Date().getTime()-draghinu < 1000 ) {
+              if ( W == setupwindow ) closeSetupWindow();
+            }
+          }
+          else {
+            sysmenu[FLAGS] = 1;
+            dragging = sysmenu;
+            draghint = 0;
+            draghinu = new Date().getTime();
+            drawWidget(wx, sysmenu);
+          }
+        }
+      }
+    }
+    return false;
+  }
+  else if ( w[CLASS] == 'SYSMENU' ) {
+    dragging = w;
+  }
+  drawWidget(wx, w);
+  return false;
+}
+function sbdrag(first) {
+  var w = dragging;
+  if ( !w || w[CLASS] != 'SCROLL' ) return;
+  w[TEXT] += draghint;
+  if ( w[TEXT] < 0 ) w[TEXT] = 0;
+  if ( w[TEXT] > w[FLAGS] ) w[TEXT] = w[FLAGS];
+  /*if ( w == W[2] ) {
+    W[3][TEXT] = 'Number of '+(mode?'Windows':'stars')+': '+(W[2][TEXT]+10);
+    drawWidget(wx, W[3]);
+  }*/
+  if ( !first ) drawWidget(dragwx, w);
+  dragtimer = setTimeout('sbdrag(false)', first?250:50);
+}
+function winmouseup(W,c, e, b) {
+  // ONMOUSEOUT is trigger-happy on IE6...
+  if (!dragging) return true;
+  if ( !b && dragging == W[0] && W[0][CLASS] == 'WINDOW' ) return true;
+  if (!e) var e = window.event;
+  var wx = c.getContext('2d');
+  var E = findWidgetForEvent(W,c,e);
+  var w = dragging;
+  e = getWidgetCoords(w,c,e);
+  dragging = undefined;
+  if ( dragtimer ) { clearTimeout(dragtimer); dragtimer = undefined; }
+  if ( w[CLASS] == 'BUTTON' && b && w == W[E[2]] ) {
+    if ( w[TEXT].indexOf('Next') >= 0 ) {
+      bumpTip();
+      drawWindow(c,W);
+    }
+    else if ( w[TEXT].indexOf('Read More') >= 0 ) {
+      if ( items[tipNum].length > 1 ) window.open(items[tipNum][1]);
+    }
+    else if ( w[TEXT].indexOf('Comment') >= 0 ) {
+      if ( items[tipNum].length > 1 ) window.open(items[tipNum][4]);
+    }
+  }
+  else if ( w[CLASS] == 'CHECK' && b && w == W[E[2]] ) {
+    w[FLAGS] = w[FLAGS] ? false : true;
+  }
+  else if ( w[CLASS] == 'SYSMENU' ) {
+    if ( e[0] > 0 && e[0] < w[WW] && e[1] > 0 && e[1] < w[WH] ) {
+      if ( e[1] < w[WH]/2 ) {
+        // Start moving
+        dragging = W[0];
+        draghint = Math.floor(W[0][WW]/2);
+        draghinu = Math.floor(W[0][WH]/2);
+      }
+      else {
+        // Click Cancel button
+        closeSetupWindow();
+      }
+    }
+    if ( draghint && b ) {
+      w[FLAGS] = 0;
+      drawWindow(c,W);
+    } else { draghint = 1; dragging = w; }
+    return false;
+  }
+  else if ( w[CLASS] == 'WINDOW' ) return false;
+  drawWidget(wx, w);
+  return false;
+}
+function closeSetupWindow() {
+  resetState();
+  document.body.style.background = 'black';
+  document.getElementById('c').style.display = 'block';
+  document.getElementById('se').style.display='none';
+  s.style.display = 'none';
+  bw.style.display = 'block';
+}
+function winmousemove(W,c,e) {
+  if (!dragging) return;
+  if (!e) var e = window.event;
+  var wx = c.getContext('2d');
+  var w = dragging;
+  e = getWidgetCoords(w,c,e);
+  if ( w[CLASS] == 'BUTTON' ) return false;
+  else if ( w[CLASS] == 'WINDOW' ) {
+    c.style.left = (e[2]-draghint)+"px"; c.style.top = (e[3]-draghinu)+"px";
+    return false;
+  }
+  else if ( w[CLASS] == 'SCROLL' && !draghint ) {
+    var pos = (e[0]-17.0)/(w[WW]-17*2);
+    if ( pos < 0 ) pos = 0;
+    if ( pos > 1 ) pos = 1;
+    w[TEXT] = Math.floor(pos*w[FLAGS]);
+    /*if ( w == W[2] ) {
+      W[3][TEXT] = 'Number of '+(mode?'Windows':'stars')+': '+(W[2][TEXT]+10);
+      drawWidget(wx, W[3]);
+    }*/
+  }
+  drawWidget(wx, w);
+  return false;
+}
+
+function globalmousemove(e) {
+  if ( dragging && dragging == setupwindow[0] ) {
+    winmousemove(setupwindow,s,e);
+    return false;
+  }
+  else return true;
+}
+function globalmouseclick(e) {
+  if ( dragging && dragging[CLASS] == 'SYSMENU' )
+    winmouseup(setupwindow,s,e,1);
+  return false;
+}
+// Default TILs from Windows 95
+var defaultitems = [["To open a program, you just click the Start button, and then click the program's icon."],["To add a program to your Start menu, you can drag the program's icon onto the Start button."],["You can use long filenames when you save documents. You can even use spaces!"],["You can minimize neck strain by positioning your monitor at eye level."],["To select more than one file or folder, hold down CTRL while you click each item."],["Deleted files and folders are saved in the Recycle Bin until you empty it."],["You can use Paint in the Accessories folder to draw pictures and to view bitmap files."],["You can switch mouse buttons if you are left-handed. Just double-click the Mouse icon in Control Panel."],["When you type, you should keep your wrists elevated or use a wristpad to minimize strain."],["You can copy and paste text between MS-DOS and Windows."],["Even if you don't shut down your computer at night, you can turn off your monitor to save power."]];
+// Load TILs from Reddit
+var items = defaultitems;
+function reddit(obj) {
+  items = defaultitems;
+  var myitems = obj.data.children;
+  if ( !myitems || !myitems.length ) return;
+  items = new Array();
+  for ( i=0; i< myitems.length; i++ ) {
+    if ( myitems[i].kind != "t3" ) continue;
+    link = myitems[i].data;
+    mytitle = link.title.replace(/TIL[:,]?/i,'');
+    mytitle = "..."+mytitle.replace(/^\s+|\s+$/g,'');
+    //mytitle = mytitle.replace(/[a-zA-Z]/, function(s){return s.toLowerCase()});
+    myurl = link.url;
+    if ( myurl[0] == "/" ) myurl = "http://www.reddit.com"+myurl;
+    items[items.length] = [unEntity(mytitle), unEntity(myurl), link.score,
+      link.num_comments, "http://www.reddit.com"+unEntity(link.permalink)];
+  }
+}
+//-->
+</script>
+<script src="http://www.reddit.com/r/todayilearned/.json?jsonp=reddit" type="text/javascript"></script>
+</body>
+</html>
