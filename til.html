@@ -518,13 +518,13 @@ function reddit(obj) {
     mytitle = "..."+mytitle.replace(/^\s+|\s+$/g,'');
     //mytitle = mytitle.replace(/[a-zA-Z]/, function(s){return s.toLowerCase()});
     myurl = link.url;
-    if ( myurl[0] == "/" ) myurl = "http://www.reddit.com"+myurl;
+    if ( myurl[0] == "/" ) myurl = "https://www.reddit.com"+myurl;
     items[items.length] = [unEntity(mytitle), unEntity(myurl), link.score,
-      link.num_comments, "http://www.reddit.com"+unEntity(link.permalink)];
+      link.num_comments, "https://www.reddit.com"+unEntity(link.permalink)];
   }
 }
 //-->
 </script>
-<script src="http://www.reddit.com/r/todayilearned/.json?jsonp=reddit" type="text/javascript"></script>
+<script src="https://www.reddit.com/r/todayilearned/.json?jsonp=reddit" type="text/javascript"></script>
 </body>
 </html>
